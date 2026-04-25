@@ -176,7 +176,7 @@ class FinancialConsolidator:
         status_text = st.empty()
         
         for idx, uploaded_file in enumerate(uploaded_files):
-            status_text.text(f"Procesando {uploaded_file.name}...")
+            status_text.text(f"Processing {uploaded_file.name}...")
             
             df = self.load_financial_report(uploaded_file, uploaded_file.name)
             if df is not None and not df.empty:
@@ -253,7 +253,7 @@ class FinancialConsolidator:
 
 def main():
     st.markdown('<h1 class="main-header">📊 Financial Report Consolidator</h1>', unsafe_allow_html=True)
-    st.markdown("**Consolida y analiza tus reportes financieros mensuales de manera eficiente**")
+    st.markdown("**Consolidate and analyze your monthly financial reports efficiently**")
     
     # Inicializar el consolidador
     if 'consolidator' not in st.session_state:
@@ -263,32 +263,32 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("⚙️ Configuración")
+        st.header("⚙️ Configuration")
         
         uploaded_files = st.file_uploader(
-            "Cargar reportes financieros",
+            "Upload financial reports",
             type=['xlsx', 'xls'],
             accept_multiple_files=True,
-            help="Selecciona uno o más archivos Excel con reportes financieros"
+            help="Select one or more Excel files with financial reports"
         )
         
         if uploaded_files:
-            if st.button("🔄 Consolidar Reportes", type="primary", use_container_width=True):
-                with st.spinner("Consolidando reportes..."):
+            if st.button("🔄 Consolidate Reports", type="primary", use_container_width=True):
+                with st.spinner("Consolidating reports..."):
                     if consolidator.consolidate_reports(uploaded_files):
-                        st.success(f"✅ {len(uploaded_files)} archivos consolidados exitosamente")
+                        st.success(f"✅ {len(uploaded_files)} files consolidated successfully")
                         st.session_state.consolidated = True
                     else:
-                        st.error("❌ Error al consolidar reportes")
+                        st.error("❌ Error consolidating reports")
         
         st.divider()
         
         if hasattr(st.session_state, 'consolidated') and st.session_state.consolidated:
-            st.subheader("📥 Exportar Datos")
+            st.subheader("📥 Export Data")
             
             excel_data = consolidator.export_to_excel()
             st.download_button(
-                label="⬇️ Descargar Excel Consolidado",
+                label="⬇️ Download Consolidated Excel",
                 data=excel_data,
                 file_name=f"financial_consolidated_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -304,21 +304,21 @@ def main():
         
         with col1:
             st.metric(
-                label="💰 Total Ingresos",
+                label="💰 Total Income",
                 value=f"${stats['total_income']:,.2f}",
                 delta=None
             )
         
         with col2:
             st.metric(
-                label="💸 Total Gastos",
+                label="💸 Total Expenses",
                 value=f"${stats['total_expenses']:,.2f}",
                 delta=None
             )
         
         with col3:
             st.metric(
-                label="📊 Flujo Neto",
+                label="📊 Net Flow",
                 value=f"${stats['net_flow']:,.2f}",
                 delta=None,
                 delta_color="normal" if stats['net_flow'] >= 0 else "inverse"
@@ -326,7 +326,7 @@ def main():
         
         with col4:
             st.metric(
-                label="🔢 Transacciones",
+                label="🔢 Transactions",
                 value=f"{stats['total_transactions']:,}",
                 delta=None
             )
@@ -334,10 +334,10 @@ def main():
         st.divider()
         
         # Tabs para diferentes vistas
-        tab1, tab2, tab3, tab4 = st.tabs(["📈 Análisis", "📋 Transacciones", "📊 Categorías", "👥 Personas"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Analysis", "📋 Transactions", "📊 Categories", "👥 People"])
         
         with tab1:
-            st.subheader("Análisis de Flujo de Caja")
+            st.subheader("Cash Flow Analysis")
             
             # Gráfico de flujo mensual
             monthly_data = consolidator.transactions_df.groupby('YearMonth').agg({
@@ -349,19 +349,19 @@ def main():
             
             fig = go.Figure()
             fig.add_trace(go.Bar(
-                name='Ingresos',
+                name='Income',
                 x=monthly_data['YearMonth'],
                 y=monthly_data['In'],
                 marker_color='#28a745'
             ))
             fig.add_trace(go.Bar(
-                name='Gastos',
+                name='Expenses',
                 x=monthly_data['YearMonth'],
                 y=monthly_data['Out'],
                 marker_color='#dc3545'
             ))
             fig.add_trace(go.Scatter(
-                name='Flujo Neto',
+                name='Net Flow',
                 x=monthly_data['YearMonth'],
                 y=monthly_data['Net'],
                 mode='lines+markers',
@@ -370,9 +370,9 @@ def main():
             ))
             
             fig.update_layout(
-                title='Flujo de Caja Mensual',
-                xaxis_title='Mes',
-                yaxis_title='Monto ($)',
+                title='Monthly Cash Flow',
+                xaxis_title='Month',
+                yaxis_title='Amount ($)',
                 barmode='group',
                 height=500,
                 hovermode='x unified'
@@ -390,8 +390,8 @@ def main():
                     x=top_expenses.values,
                     y=top_expenses.index,
                     orientation='h',
-                    title='Top 10 Categorías de Gastos',
-                    labels={'x': 'Monto ($)', 'y': 'Categoría'},
+                    title='Top 10 Expense Categories',
+                    labels={'x': 'Amount ($)', 'y': 'Category'},
                     color=top_expenses.values,
                     color_continuous_scale='Reds'
                 )
@@ -404,40 +404,40 @@ def main():
                 fig_payer = px.pie(
                     values=payer_dist.values,
                     names=payer_dist.index,
-                    title='Distribución de Gastos por Persona',
+                    title='Expense Distribution by Person',
                     hole=0.4
                 )
                 fig_payer.update_layout(height=400)
                 st.plotly_chart(fig_payer, use_container_width=True)
         
         with tab2:
-            st.subheader("Todas las Transacciones")
+            st.subheader("All Transactions")
             
             # Filtros
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 years = sorted(consolidator.transactions_df['Year'].unique())
-                selected_year = st.selectbox("Año", ['Todos'] + list(years))
+                selected_year = st.selectbox("Year", ['All'] + list(years))
             
             with col2:
                 months = sorted(consolidator.transactions_df['Month'].unique())
-                selected_month = st.selectbox("Mes", ['Todos'] + list(months))
+                selected_month = st.selectbox("Month", ['All'] + list(months))
             
             with col3:
                 categories = sorted(consolidator.transactions_df['Transaction'].unique())
-                selected_category = st.selectbox("Categoría", ['Todas'] + list(categories))
+                selected_category = st.selectbox("Category", ['All'] + list(categories))
             
             # Aplicar filtros
             filtered_df = consolidator.transactions_df.copy()
             
-            if selected_year != 'Todos':
+            if selected_year != 'All':
                 filtered_df = filtered_df[filtered_df['Year'] == selected_year]
             
-            if selected_month != 'Todos':
+            if selected_month != 'All':
                 filtered_df = filtered_df[filtered_df['Month'] == selected_month]
             
-            if selected_category != 'Todas':
+            if selected_category != 'All':
                 filtered_df = filtered_df[filtered_df['Transaction'] == selected_category]
             
             # Mostrar tabla
@@ -451,70 +451,70 @@ def main():
                 hide_index=True
             )
             
-            st.info(f"Mostrando {len(filtered_df)} de {len(consolidator.transactions_df)} transacciones")
+            st.info(f"Showing {len(filtered_df)} of {len(consolidator.transactions_df)} transactions")
         
         with tab3:
-            st.subheader("Análisis por Categorías")
+            st.subheader("Analysis by Categories")
             
             category_summary = consolidator.transactions_df.groupby('Transaction').agg({
                 'Out': ['sum', 'mean', 'count'],
                 'In': 'sum'
             }).round(2)
             
-            category_summary.columns = ['Total Gastos', 'Promedio', 'Cantidad', 'Total Ingresos']
-            category_summary = category_summary.sort_values('Total Gastos', ascending=False)
+            category_summary.columns = ['Total Expenses', 'Average', 'Quantity', 'Total Income']
+            category_summary = category_summary.sort_values('Total Expenses', ascending=False)
             
             st.dataframe(category_summary, use_container_width=True)
         
         with tab4:
-            st.subheader("Análisis por Personas")
+            st.subheader("Analysis by People")
             
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("#### Pagadores (Payer)")
+                st.markdown("#### Payers")
                 payer_summary = consolidator.transactions_df.groupby('Payer').agg({
                     'Out': ['sum', 'count'],
                     'In': 'sum'
                 }).round(2)
-                payer_summary.columns = ['Total Pagado', 'Transacciones', 'Total Recibido']
-                payer_summary = payer_summary.sort_values('Total Pagado', ascending=False)
+                payer_summary.columns = ['Total Paid', 'Transactions', 'Total Received']
+                payer_summary = payer_summary.sort_values('Total Paid', ascending=False)
                 st.dataframe(payer_summary, use_container_width=True)
             
             with col2:
-                st.markdown("#### Receptores (Recipient)")
+                st.markdown("#### Recipients")
                 recipient_summary = consolidator.transactions_df.groupby('Recipient').agg({
                     'In': ['sum', 'count'],
                     'Out': 'sum'
                 }).round(2)
-                recipient_summary.columns = ['Total Recibido', 'Transacciones', 'Total Pagado']
-                recipient_summary = recipient_summary.sort_values('Total Recibido', ascending=False)
+                recipient_summary.columns = ['Total Received', 'Transactions', 'Total Paid']
+                recipient_summary = recipient_summary.sort_values('Total Received', ascending=False)
                 st.dataframe(recipient_summary, use_container_width=True)
     
     else:
         # Estado inicial
-        st.info("👆 Carga tus archivos Excel en el panel lateral para comenzar")
+        st.info("👆 Upload your Excel files in the sidebar to get started")
         
         st.markdown("""
-        ### 🚀 Cómo usar esta aplicación:
+        ### 🚀 How to use this app:
         
-        1. **Carga tus archivos**: Usa el botón en el panel lateral para cargar uno o más reportes financieros en formato Excel
-        2. **Consolida**: Haz clic en "Consolidar Reportes" para procesar los archivos
-        3. **Analiza**: Explora los diferentes tabs para ver análisis detallados
-        4. **Exporta**: Descarga el reporte consolidado en formato Excel
+        1. **Upload your files**: Use the button in the sidebar to upload one or more financial reports in Excel format
+        2. **Consolidate**: Click "Consolidate Reports" to process the files
+        3. **Analyze**: Explore the different tabs to see detailed analysis
+        4. **Export**: Download the consolidated report in Excel format
         
-        ### 📋 Formatos soportados:
-        - Archivos .xlsx y .xls
-        - Estructura estándar de reportes de Gojitech
-        - Múltiples hojas por archivo
+        ### 📋 Supported formats:
+        - .xlsx and .xls files
+        - Standard financial report structure
+        - Multiple sheets per file
         
-        ### 💡 Características:
-        - ✅ Consolidación automática de múltiples archivos
-        - ✅ Análisis de flujo de caja mensual
-        - ✅ Gráficos interactivos
-        - ✅ Filtros dinámicos
-        - ✅ Exportación a Excel con múltiples hojas
-        - ✅ Análisis por categorías y personas
+        ### 💡 Features:
+        - ✅ Automatic consolidation of multiple files
+        - ✅ Monthly cash flow analysis
+        - ✅ Interactive charts
+        - ✅ Dynamic filters
+        - ✅ Excel export with multiple sheets
+        - ✅ Analysis by categories and people
         """)
 
 
