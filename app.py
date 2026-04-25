@@ -147,8 +147,8 @@ class FinancialConsolidator:
                 for _, row in data_df.iterrows():
                     transaction = {
                         'Date': self.parse_date(row[date_col]) if date_col else None,
-                        'Payer': row[payer_col] if payer_col else '',
-                        'Recipient': row[recipient_col] if recipient_col else '',
+                        'Payer': row[recipient_col] if recipient_col else '',  # INVERTIDO
+                        'Recipient': row[payer_col] if payer_col else '',      # INVERTIDO
                         'Transaction': row[transaction_col] if transaction_col else '',
                         'Out': pd.to_numeric(row[out_col], errors='coerce') if out_col else 0,
                         'In': pd.to_numeric(row[in_col], errors='coerce') if in_col else 0,
