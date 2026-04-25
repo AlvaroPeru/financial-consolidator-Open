@@ -141,31 +141,30 @@ class FinancialConsolidator:
                 if not date_col:
                     continue
                 
-                # Limpiar y procesar datos
-                data_df = data_df[pd.notna(data_df[date_col])]
-                
+                # INCLUIR TODAS LAS FILAS - sin filtrar por fecha válida
                 for _, row in data_df.iterrows():
+                    # Parsear fecha (puede ser None)
+                    parsed_date = self.parse_date(row[date_col]) if date_col else None
+                    
                     transaction = {
-                        'Date': self.parse_date(row[date_col]) if date_col else None,
-                        'Payer': row[recipient_col] if recipient_col else '',  # INVERTIDO
-                        'Recipient': row[payer_col] if payer_col else '',      # INVERTIDO
-                        'Transaction': row[transaction_col] if transaction_col else '',
+                        'Date': parsed_date,
+                        'Payer': row[payer_col] if payer_col and pd.notna(row[payer_col]) else '',
+                        'Recipient': row[recipient_col] if recipient_col and pd.notna(row[recipient_col]) else '',
+                        'Transaction': row[transaction_col] if transaction_col and pd.notna(row[transaction_col]) else '',
                         'Out': pd.to_numeric(row[out_col], errors='coerce') if out_col else 0,
                         'In': pd.to_numeric(row[in_col], errors='coerce') if in_col else 0,
                         'Balance': pd.to_numeric(row[balance_col], errors='coerce') if balance_col else 0,
-                        'Explanation': row[explanation_col] if explanation_col else '',
-                        'Source_File': filename,
-                        'Source_Sheet': sheet_name
+                        'Explanation': row[explanation_col] if explanation_col and pd.notna(row[explanation_col]) else '',
+                        'Source_File': filename
                     }
                     
-                    # Solo agregar si tiene fecha válida
-                    if transaction['Date']:
-                        all_transactions.append(transaction)
+                    # AGREGAR TODAS LAS FILAS - incluso sin fecha
+                    all_transactions.append(transaction)
             
             return pd.DataFrame(all_transactions)
             
         except Exception as e:
-            st.error(f"Error al procesar {filename}: {str(e)}")
+            st.error(f"Error processing {filename}: {str(e)}")
             return None
     
     def consolidate_reports(self, uploaded_files):
@@ -189,10 +188,20 @@ class FinancialConsolidator:
         
         if all_data:
             self.transactions_df = pd.concat(all_data, ignore_index=True)
-            self.transactions_df = self.transactions_df.sort_values('Date')
-            self.transactions_df['Year'] = self.transactions_df['Date'].dt.year
-            self.transactions_df['Month'] = self.transactions_df['Date'].dt.month
-            self.transactions_df['YearMonth'] = self.transactions_df['Date'].dt.to_period('M')
+            
+            # Ordenar por fecha solo las que tienen fecha válida
+            self.transactions_df = self.transactions_df.sort_values('Date', na_position='last')
+            
+            # Crear columnas Year y Month (manejar fechas None)
+            self.transactions_df['Year'] = self.transactions_df['Date'].apply(
+                lambda x: x.year if pd.notna(x) else None
+            )
+            self.transactions_df['Month'] = self.transactions_df['Date'].apply(
+                lambda x: x.month if pd.notna(x) else None
+            )
+            self.transactions_df['YearMonth'] = self.transactions_df['Date'].apply(
+                lambda x: x.to_period('M') if pd.notna(x) else None
+            )
             
             return True
         return False
@@ -223,14 +232,16 @@ class FinancialConsolidator:
             # Hoja 1: Todas las transacciones
             self.transactions_df.to_excel(writer, sheet_name='All Transactions', index=False)
             
-            # Hoja 2: Resumen mensual
-            monthly_summary = self.transactions_df.groupby('YearMonth').agg({
-                'In': 'sum',
-                'Out': 'sum',
-                'Date': 'count'
-            }).rename(columns={'Date': 'Transaction Count'})
-            monthly_summary['Net Flow'] = monthly_summary['In'] - monthly_summary['Out']
-            monthly_summary.to_excel(writer, sheet_name='Monthly Summary')
+            # Hoja 2: Resumen mensual (solo para filas con fecha válida)
+            df_with_dates = self.transactions_df[self.transactions_df['YearMonth'].notna()].copy()
+            if not df_with_dates.empty:
+                monthly_summary = df_with_dates.groupby('YearMonth').agg({
+                    'In': 'sum',
+                    'Out': 'sum',
+                    'Date': 'count'
+                }).rename(columns={'Date': 'Transaction Count'})
+                monthly_summary['Net Flow'] = monthly_summary['In'] - monthly_summary['Out']
+                monthly_summary.to_excel(writer, sheet_name='Monthly Summary')
             
             # Hoja 3: Resumen por categoría
             category_summary = self.transactions_df.groupby('Transaction').agg({
@@ -339,157 +350,173 @@ def main():
         with tab1:
             st.subheader("Cash Flow Analysis")
             
-            # Gráfico de flujo mensual
-            monthly_data = consolidator.transactions_df.groupby('YearMonth').agg({
-                'In': 'sum',
-                'Out': 'sum'
-            }).reset_index()
-            monthly_data['YearMonth'] = monthly_data['YearMonth'].astype(str)
-            monthly_data['Net'] = monthly_data['In'] - monthly_data['Out']
+            # Filtrar solo filas con fechas válidas para gráficos
+            df_with_dates = consolidator.transactions_df[consolidator.transactions_df['YearMonth'].notna()].copy()
             
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                name='Income',
-                x=monthly_data['YearMonth'],
-                y=monthly_data['In'],
-                marker_color='#28a745'
-            ))
-            fig.add_trace(go.Bar(
-                name='Expenses',
-                x=monthly_data['YearMonth'],
-                y=monthly_data['Out'],
-                marker_color='#dc3545'
-            ))
-            fig.add_trace(go.Scatter(
-                name='Net Flow',
-                x=monthly_data['YearMonth'],
-                y=monthly_data['Net'],
-                mode='lines+markers',
-                line=dict(color='#007bff', width=3),
-                marker=dict(size=8)
-            ))
+            if df_with_dates.empty:
+                st.warning("No data with valid dates available for analysis.")
+            else:
+                # Gráfico de flujo mensual
+                monthly_data = df_with_dates.groupby('YearMonth').agg({
+                    'In': 'sum',
+                    'Out': 'sum'
+                }).reset_index()
+                monthly_data['YearMonth'] = monthly_data['YearMonth'].astype(str)
+                monthly_data['Net'] = monthly_data['In'] - monthly_data['Out']
             
-            fig.update_layout(
-                title='Monthly Cash Flow',
-                xaxis_title='Month',
-                yaxis_title='Amount ($)',
-                barmode='group',
-                height=500,
-                hovermode='x unified'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Balance acumulado
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Top gastos
-                top_expenses = consolidator.transactions_df.groupby('Transaction')['Out'].sum().sort_values(ascending=False).head(10)
-                fig_expenses = px.bar(
-                    x=top_expenses.values,
-                    y=top_expenses.index,
-                    orientation='h',
-                    title='Top 10 Expense Categories',
-                    labels={'x': 'Amount ($)', 'y': 'Category'},
-                    color=top_expenses.values,
-                    color_continuous_scale='Reds'
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    name='Income',
+                    x=monthly_data['YearMonth'],
+                    y=monthly_data['In'],
+                    marker_color='#28a745'
+                ))
+                fig.add_trace(go.Bar(
+                    name='Expenses',
+                    x=monthly_data['YearMonth'],
+                    y=monthly_data['Out'],
+                    marker_color='#dc3545'
+                ))
+                fig.add_trace(go.Scatter(
+                    name='Net Flow',
+                    x=monthly_data['YearMonth'],
+                    y=monthly_data['Net'],
+                    mode='lines+markers',
+                    line=dict(color='#007bff', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                fig.update_layout(
+                    title='Monthly Cash Flow',
+                    xaxis_title='Month',
+                    yaxis_title='Amount ($)',
+                    barmode='group',
+                    height=500,
+                    hovermode='x unified'
                 )
-                fig_expenses.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig_expenses, use_container_width=True)
-            
-            with col2:
-                # Distribución por persona
-                payer_dist = consolidator.transactions_df.groupby('Payer')['Out'].sum().sort_values(ascending=False)
-                fig_payer = px.pie(
-                    values=payer_dist.values,
-                    names=payer_dist.index,
-                    title='Expense Distribution by Person',
-                    hole=0.4
-                )
-                fig_payer.update_layout(height=400)
-                st.plotly_chart(fig_payer, use_container_width=True)
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Balance acumulado
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Top gastos
+                    top_expenses = df_with_dates.groupby('Transaction')['Out'].sum().sort_values(ascending=False).head(10)
+                    fig_expenses = px.bar(
+                        x=top_expenses.values,
+                        y=top_expenses.index,
+                        orientation='h',
+                        title='Top 10 Expense Categories',
+                        labels={'x': 'Amount ($)', 'y': 'Category'},
+                        color=top_expenses.values,
+                        color_continuous_scale='Reds'
+                    )
+                    fig_expenses.update_layout(showlegend=False, height=400)
+                    st.plotly_chart(fig_expenses, use_container_width=True)
+                
+                with col2:
+                    # Distribución por persona
+                    payer_dist = df_with_dates.groupby('Payer')['Out'].sum().sort_values(ascending=False)
+                    fig_payer = px.pie(
+                        values=payer_dist.values,
+                        names=payer_dist.index,
+                        title='Expense Distribution by Person',
+                        hole=0.4
+                    )
+                    fig_payer.update_layout(height=400)
+                    st.plotly_chart(fig_payer, use_container_width=True)
         
         with tab2:
             st.subheader("All Transactions")
             
-            # Filtros
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                years = sorted(consolidator.transactions_df['Year'].unique())
-                selected_year = st.selectbox("Year", ['All'] + list(years))
-            
-            with col2:
-                months = sorted(consolidator.transactions_df['Month'].unique())
-                selected_month = st.selectbox("Month", ['All'] + list(months))
-            
-            with col3:
-                categories = sorted(consolidator.transactions_df['Transaction'].unique())
-                selected_category = st.selectbox("Category", ['All'] + list(categories))
-            
-            # Aplicar filtros
-            filtered_df = consolidator.transactions_df.copy()
-            
-            if selected_year != 'All':
-                filtered_df = filtered_df[filtered_df['Year'] == selected_year]
-            
-            if selected_month != 'All':
-                filtered_df = filtered_df[filtered_df['Month'] == selected_month]
-            
-            if selected_category != 'All':
-                filtered_df = filtered_df[filtered_df['Transaction'] == selected_category]
-            
-            # Mostrar tabla
-            display_df = filtered_df[['Date', 'Payer', 'Recipient', 'Transaction', 'Out', 'In', 'Balance', 'Explanation']].copy()
-            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-            
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                height=500,
-                hide_index=True
-            )
-            
-            st.info(f"Showing {len(filtered_df)} of {len(consolidator.transactions_df)} transactions")
+            # Verificar que hay datos
+            if consolidator.transactions_df is None or consolidator.transactions_df.empty:
+                st.warning("No transaction data available. Please upload and consolidate files first.")
+            else:
+                # Filtros
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    years = sorted(consolidator.transactions_df['Year'].unique())
+                    selected_year = st.selectbox("Year", ['All'] + list(years))
+                
+                with col2:
+                    months = sorted(consolidator.transactions_df['Month'].unique())
+                    selected_month = st.selectbox("Month", ['All'] + list(months))
+                
+                with col3:
+                    categories = sorted(consolidator.transactions_df['Transaction'].unique())
+                    selected_category = st.selectbox("Category", ['All'] + list(categories))
+                
+                # Aplicar filtros
+                filtered_df = consolidator.transactions_df.copy()
+                
+                if selected_year != 'All':
+                    filtered_df = filtered_df[filtered_df['Year'] == selected_year]
+                
+                if selected_month != 'All':
+                    filtered_df = filtered_df[filtered_df['Month'] == selected_month]
+                
+                if selected_category != 'All':
+                    filtered_df = filtered_df[filtered_df['Transaction'] == selected_category]
+                
+                # Mostrar tabla
+                display_df = filtered_df[['Date', 'Payer', 'Recipient', 'Transaction', 'Out', 'In', 'Balance', 'Explanation']].copy()
+                display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    height=500,
+                    hide_index=True
+                )
+                
+                st.info(f"Showing {len(filtered_df)} of {len(consolidator.transactions_df)} transactions")
         
         with tab3:
             st.subheader("Analysis by Categories")
             
-            category_summary = consolidator.transactions_df.groupby('Transaction').agg({
-                'Out': ['sum', 'mean', 'count'],
-                'In': 'sum'
-            }).round(2)
-            
-            category_summary.columns = ['Total Expenses', 'Average', 'Quantity', 'Total Income']
-            category_summary = category_summary.sort_values('Total Expenses', ascending=False)
-            
-            st.dataframe(category_summary, use_container_width=True)
+            if consolidator.transactions_df is None or consolidator.transactions_df.empty:
+                st.warning("No transaction data available. Please upload and consolidate files first.")
+            else:
+                category_summary = consolidator.transactions_df.groupby('Transaction').agg({
+                    'Out': ['sum', 'mean', 'count'],
+                    'In': 'sum'
+                }).round(2)
+                
+                category_summary.columns = ['Total Expenses', 'Average', 'Quantity', 'Total Income']
+                category_summary = category_summary.sort_values('Total Expenses', ascending=False)
+                
+                st.dataframe(category_summary, use_container_width=True)
         
         with tab4:
             st.subheader("Analysis by People")
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("#### Payers")
-                payer_summary = consolidator.transactions_df.groupby('Payer').agg({
-                    'Out': ['sum', 'count'],
-                    'In': 'sum'
-                }).round(2)
-                payer_summary.columns = ['Total Paid', 'Transactions', 'Total Received']
-                payer_summary = payer_summary.sort_values('Total Paid', ascending=False)
-                st.dataframe(payer_summary, use_container_width=True)
-            
-            with col2:
-                st.markdown("#### Recipients")
-                recipient_summary = consolidator.transactions_df.groupby('Recipient').agg({
-                    'In': ['sum', 'count'],
-                    'Out': 'sum'
-                }).round(2)
-                recipient_summary.columns = ['Total Received', 'Transactions', 'Total Paid']
-                recipient_summary = recipient_summary.sort_values('Total Received', ascending=False)
-                st.dataframe(recipient_summary, use_container_width=True)
+            if consolidator.transactions_df is None or consolidator.transactions_df.empty:
+                st.warning("No transaction data available. Please upload and consolidate files first.")
+            else:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### Payers")
+                    payer_summary = consolidator.transactions_df.groupby('Payer').agg({
+                        'Out': ['sum', 'count'],
+                        'In': 'sum'
+                    }).round(2)
+                    payer_summary.columns = ['Total Paid', 'Transactions', 'Total Received']
+                    payer_summary = payer_summary.sort_values('Total Paid', ascending=False)
+                    st.dataframe(payer_summary, use_container_width=True)
+                
+                with col2:
+                    st.markdown("#### Recipients")
+                    recipient_summary = consolidator.transactions_df.groupby('Recipient').agg({
+                        'In': ['sum', 'count'],
+                        'Out': 'sum'
+                    }).round(2)
+                    recipient_summary.columns = ['Total Received', 'Transactions', 'Total Paid']
+                    recipient_summary = recipient_summary.sort_values('Total Received', ascending=False)
+                    st.dataframe(recipient_summary, use_container_width=True)
     
     else:
         # Estado inicial
