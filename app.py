@@ -88,17 +88,37 @@ class FinancialConsolidator:
             if isinstance(date_str, datetime):
                 return date_str
             
-            # Formato DD.MM.YY
-            if isinstance(date_str, str) and '.' in date_str:
+            # Convertir a string y limpiar espacios
+            date_str = str(date_str).strip().replace(' ', '')
+            
+            # Formato DD.MM.YY o DD.MM.YYYY
+            # Ejemplos: "6.3.24", "30.4.25", "4.3 24" (con espacios), "12.03.2024"
+            if '.' in date_str:
                 parts = date_str.split('.')
+                
                 if len(parts) == 3:
-                    day, month, year = parts
-                    year = f"20{year}" if len(year) == 2 else year
+                    day = parts[0]
+                    month = parts[1]
+                    year = parts[2]
+                    
+                    # Convertir año de 2 dígitos a 4 dígitos
+                    if len(year) <= 2:
+                        year_int = int(year)
+                        # Si es 00-49, asumir 2000-2049
+                        # Si es 50-99, asumir 1950-1999
+                        if year_int < 50:
+                            year = f"20{year.zfill(2)}"
+                        else:
+                            year = f"19{year.zfill(2)}"
+                    
                     return datetime(int(year), int(month), int(day))
             
-            # Intentar parsing automático
-            return pd.to_datetime(date_str)
-        except:
+            # Intentar parsing automático de pandas
+            parsed = pd.to_datetime(date_str, dayfirst=True)
+            return parsed
+            
+        except Exception as e:
+            # Si falla, retornar None
             return None
     
     def load_financial_report(self, file, filename):
@@ -135,14 +155,24 @@ class FinancialConsolidator:
                 transaction_col = next((col for col in data_df.columns if str(col).strip().lower() == 'transaction'), None)
                 out_col = next((col for col in data_df.columns if str(col).strip().lower() == 'out'), None)
                 in_col = next((col for col in data_df.columns if str(col).strip().lower() == 'in'), None)
-                balance_col = next((col for col in data_df.columns if str(col).strip().lower() == 'balance'), None)
                 explanation_col = next((col for col in data_df.columns if str(col).strip().lower() == 'explanation'), None)
+                
+                # NO incluir Balance
                 
                 if not date_col:
                     continue
                 
-                # INCLUIR TODAS LAS FILAS - sin filtrar por fecha válida
+                # INCLUIR SOLO FILAS QUE TENGAN VALOR EN OUT O IN
                 for _, row in data_df.iterrows():
+                    # Obtener valores de Out e In
+                    out_value = pd.to_numeric(row[out_col], errors='coerce') if out_col else 0
+                    in_value = pd.to_numeric(row[in_col], errors='coerce') if in_col else 0
+                    
+                    # Saltar filas donde AMBOS Out e In son 0 o NaN
+                    if pd.isna(out_value) or out_value == 0:
+                        if pd.isna(in_value) or in_value == 0:
+                            continue  # Saltar esta fila
+                    
                     # Parsear fecha (puede ser None)
                     parsed_date = self.parse_date(row[date_col]) if date_col else None
                     
@@ -151,14 +181,13 @@ class FinancialConsolidator:
                         'Payer': row[payer_col] if payer_col and pd.notna(row[payer_col]) else '',
                         'Recipient': row[recipient_col] if recipient_col and pd.notna(row[recipient_col]) else '',
                         'Transaction': row[transaction_col] if transaction_col and pd.notna(row[transaction_col]) else '',
-                        'Out': pd.to_numeric(row[out_col], errors='coerce') if out_col else 0,
-                        'In': pd.to_numeric(row[in_col], errors='coerce') if in_col else 0,
-                        'Balance': pd.to_numeric(row[balance_col], errors='coerce') if balance_col else 0,
+                        'Out': out_value if pd.notna(out_value) else 0,
+                        'In': in_value if pd.notna(in_value) else 0,
                         'Explanation': row[explanation_col] if explanation_col and pd.notna(row[explanation_col]) else '',
                         'Source_File': filename
                     }
                     
-                    # AGREGAR TODAS LAS FILAS - incluso sin fecha
+                    # Agregar la transacción
                     all_transactions.append(transaction)
             
             return pd.DataFrame(all_transactions)
@@ -462,7 +491,7 @@ def main():
                     filtered_df = filtered_df[filtered_df['Transaction'] == selected_category]
                 
                 # Mostrar tabla
-                display_df = filtered_df[['Date', 'Payer', 'Recipient', 'Transaction', 'Out', 'In', 'Balance', 'Explanation']].copy()
+                display_df = filtered_df[['Date', 'Payer', 'Recipient', 'Transaction', 'Out', 'In', 'Explanation']].copy()
                 display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
                 
                 st.dataframe(
